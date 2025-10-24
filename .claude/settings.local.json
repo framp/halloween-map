@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mv halloween-map-app/* halloween-map-app/.* .)",
+      "Bash(mv:*)",
+      "Bash(rmdir:*)",
+      "Bash(npm create:*)",
+      "Bash(npm uninstall:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
