@@ -20,38 +20,38 @@ const DEFAULT_CENTER: LatLng = {
   lng: 32.37164265057329,
 };
 const DEFAULT_PATHS: Path[] = [
-  {
-    id: "longPath",
-    name: "Long Path",
-    points: [
-      { lat: 34.895753538178006, lng: 32.37079149729516 },
-      { lat: 34.89576233426445, lng: 32.370287320828716 },
-      { lat: 34.89563479283926, lng: 32.36983948416916 },
-      { lat: 34.8957799337206, lng: 32.36916635872438 },
-      { lat: 34.895606274345894, lng: 32.368343048023924 },
-      { lat: 34.89522592922382, lng: 32.367959505552385 },
-      { lat: 34.89421637359456, lng: 32.36814189408822 },
-      { lat: 34.894201023207145, lng: 32.36746874180822 },
-      { lat: 34.89405589732032, lng: 32.36704772220724 },
-      { lat: 34.89358967380902, lng: 32.36710135296995 },
-      { lat: 34.89315425350565, lng: 32.36628339494715 },
-      { lat: 34.89333461440617, lng: 32.36600718444337 },
-      { lat: 34.89296298665465, lng: 32.36554590990356 },
-      { lat: 34.892674907922945, lng: 32.36608227455539 },
-      { lat: 34.89245500576187, lng: 32.36612518319083 },
-      { lat: 34.8922526596452, lng: 32.366460422419316 },
-      { lat: 34.89278046096026, lng: 32.367187171918026 },
-      { lat: 34.89292996289221, lng: 32.3680131514099 },
-      { lat: 34.89226585178337, lng: 32.369000065119856 },
-      { lat: 34.892666111836505, lng: 32.36937551232557 },
-      { lat: 34.8925429666263, lng: 32.37008350481037 },
-      { lat: 34.89334559489043, lng: 32.37068422402935 },
-      { lat: 34.893422575270606, lng: 32.370952404678064 },
-      { lat: 34.894020402079036, lng: 32.37070836055608 },
-      { lat: 34.89473315891199, lng: 32.370759137224915 },
-      { lat: 34.89497336995567, lng: 32.37151769545958 },
-    ],
-  },
+  // {
+  //   id: "longPath",
+  //   name: "Long Path",
+  //   points: [
+  //     { lat: 34.895753538178006, lng: 32.37079149729516 },
+  //     { lat: 34.89576233426445, lng: 32.370287320828716 },
+  //     { lat: 34.89563479283926, lng: 32.36983948416916 },
+  //     { lat: 34.8957799337206, lng: 32.36916635872438 },
+  //     { lat: 34.895606274345894, lng: 32.368343048023924 },
+  //     { lat: 34.89522592922382, lng: 32.367959505552385 },
+  //     { lat: 34.89421637359456, lng: 32.36814189408822 },
+  //     { lat: 34.894201023207145, lng: 32.36746874180822 },
+  //     { lat: 34.89405589732032, lng: 32.36704772220724 },
+  //     { lat: 34.89358967380902, lng: 32.36710135296995 },
+  //     { lat: 34.89315425350565, lng: 32.36628339494715 },
+  //     { lat: 34.89333461440617, lng: 32.36600718444337 },
+  //     { lat: 34.89296298665465, lng: 32.36554590990356 },
+  //     { lat: 34.892674907922945, lng: 32.36608227455539 },
+  //     { lat: 34.89245500576187, lng: 32.36612518319083 },
+  //     { lat: 34.8922526596452, lng: 32.366460422419316 },
+  //     { lat: 34.89278046096026, lng: 32.367187171918026 },
+  //     { lat: 34.89292996289221, lng: 32.3680131514099 },
+  //     { lat: 34.89226585178337, lng: 32.369000065119856 },
+  //     { lat: 34.892666111836505, lng: 32.36937551232557 },
+  //     { lat: 34.8925429666263, lng: 32.37008350481037 },
+  //     { lat: 34.89334559489043, lng: 32.37068422402935 },
+  //     { lat: 34.893422575270606, lng: 32.370952404678064 },
+  //     { lat: 34.894020402079036, lng: 32.37070836055608 },
+  //     { lat: 34.89473315891199, lng: 32.370759137224915 },
+  //     { lat: 34.89497336995567, lng: 32.37151769545958 },
+  //   ],
+  // },
   {
     id: "shortPath",
     name: "Short Path",
@@ -97,11 +97,64 @@ const App: Component = () => {
   const [draggedPosition, setDraggedPosition] = createSignal<LatLng | null>(
     null,
   );
+  const [heading, setHeading] = createSignal<number | null>(null);
 
   let polylines: Map<string, google.maps.Polyline> = new Map();
   let markers: Map<string, google.maps.Marker[]> = new Map();
   let currentLocationMarker: google.maps.Marker | undefined;
   let isDragging = false;
+  let currentRotation = 0; // Current displayed rotation
+  let targetRotation = 0; // Target rotation from sensor
+  let rotationAnimationInterval: number | null = null;
+  const ANIMATION_FPS = 10; // Max 10 updates per second
+  const ANIMATION_INTERVAL = 1000 / ANIMATION_FPS; // 100ms
+
+  // Calculate shortest rotation angle (handles 0-360 wrap-around)
+  const getShortestAngle = (from: number, to: number): number => {
+    let diff = to - from;
+    // Normalize to [-180, 180]
+    while (diff > 180) diff -= 360;
+    while (diff < -180) diff += 360;
+    return diff;
+  };
+
+  // Smooth rotation animation
+  const animateRotation = () => {
+    if (!currentLocationMarker) return;
+
+    const diff = getShortestAngle(currentRotation, targetRotation);
+    const easingFactor = 0.15; // Adjust for faster/slower easing (0.1 = slower, 0.3 = faster)
+
+    // Move current rotation towards target
+    currentRotation += diff * easingFactor;
+
+    // Normalize to [0, 360)
+    currentRotation = ((currentRotation % 360) + 360) % 360;
+
+    // Update marker icon with new rotation
+    const location = currentLocation();
+    if (location) {
+      const icon = {
+        path: "M 0,-24 L 12,12 L 0,6 L -12,12 Z",
+        fillColor: "#4285F4",
+        fillOpacity: 0.9,
+        strokeColor: "#ffffff",
+        strokeWeight: 2,
+        scale: 1,
+        rotation: currentRotation,
+        anchor: new google.maps.Point(0, 0),
+      };
+      currentLocationMarker.setIcon(icon);
+    }
+
+    // Stop animation if we've reached the target (within threshold)
+    if (Math.abs(diff) < 0.1) {
+      if (rotationAnimationInterval !== null) {
+        clearInterval(rotationAnimationInterval);
+        rotationAnimationInterval = null;
+      }
+    }
+  };
 
   // Load paths from localStorage on mount
   onMount(() => {
@@ -144,23 +197,94 @@ const App: Component = () => {
       );
     }
 
+    // Request device orientation permission (required on iOS 13+)
+    const requestOrientationPermission = async () => {
+      if (
+        typeof (DeviceOrientationEvent as any).requestPermission === "function"
+      ) {
+        try {
+          const permission = await (
+            DeviceOrientationEvent as any
+          ).requestPermission();
+          if (permission === "granted") {
+            setupOrientationListener();
+          }
+        } catch (error) {
+          console.error("Error requesting orientation permission:", error);
+        }
+      } else {
+        // Non-iOS devices or older iOS versions
+        setupOrientationListener();
+      }
+    };
+
+    const setupOrientationListener = () => {
+      const handleOrientation = (event: DeviceOrientationEvent) => {
+        // Use absolute heading if available (compass), otherwise use alpha
+        const compassHeading = event.webkitCompassHeading || event.alpha;
+        if (compassHeading !== null) {
+          // webkitCompassHeading gives degrees from north (0-360)
+          // alpha gives rotation around z-axis (0-360)
+          // For webkitCompassHeading: 0 = North, 90 = East, 180 = South, 270 = West
+          // For alpha: we need to invert it (360 - alpha) to match compass direction
+          const heading =
+            event.webkitCompassHeading !== undefined
+              ? event.webkitCompassHeading
+              : 360 - (compassHeading as number);
+          setHeading(heading);
+        }
+      };
+
+      window.addEventListener(
+        "deviceorientationabsolute",
+        handleOrientation as any,
+        true,
+      );
+      window.addEventListener("deviceorientation", handleOrientation);
+    };
+
+    // Start orientation tracking
+    requestOrientationPermission();
+
     // Load API key from environment
     const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
     setApiKey(key);
 
+    // Remove Google Maps development warnings
+    const warningInterval = setInterval(() => {
+      document.querySelectorAll("span").forEach((span) => {
+        if (span.innerText.trim() === "For development purposes only") {
+          span.innerText = "";
+        }
+        if (
+          span.innerText.trim() ===
+          "This page can't load Google Maps correctly."
+        ) {
+          const grandparent = span.parentElement?.parentElement;
+          if (grandparent) {
+            grandparent.remove();
+          }
+        }
+      });
+    }, 500);
+
     // Add keyboard shortcut to toggle edit mode (Ctrl+E)
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === 'e') {
+      if (e.ctrlKey && e.key === "e") {
         e.preventDefault();
         const newEditMode = !editModeEnabled();
         setEditModeEnabled(newEditMode);
         localStorage.setItem(EDIT_MODE_KEY, String(newEditMode));
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown);
+      clearInterval(warningInterval);
+      if (rotationAnimationInterval !== null) {
+        clearInterval(rotationAnimationInterval);
+      }
     };
   });
 
@@ -216,11 +340,11 @@ const App: Component = () => {
         const marker = new google.maps.Marker({
           position: point,
           map: mapInstance,
-          label: isSelected ? `${pointIndex + 1}` : "",
+          label: `${pointIndex + 1}`,
           draggable: isEditing() && isSelected,
           icon: {
             path: google.maps.SymbolPath.CIRCLE,
-            scale: isMarkerSelected ? 12 : isSelected ? 10 : 6,
+            scale: isMarkerSelected ? 13 : isSelected ? 13 : 13,
             fillColor: color,
             fillOpacity: isMarkerSelected ? 1.0 : isSelected ? 0.9 : 0.6,
             strokeColor: isMarkerSelected ? "#FFD700" : "#ffffff",
@@ -279,22 +403,59 @@ const App: Component = () => {
     const location = currentLocation();
     if (!location) return;
 
-    if (currentLocationMarker) {
-      currentLocationMarker.setMap(null);
-    }
+    const currentHeading = heading();
 
-    currentLocationMarker = new google.maps.Marker({
-      position: location,
-      map: mapInstance,
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 8,
-        fillColor: "#4285F4",
-        fillOpacity: 1,
-        strokeColor: "#ffffff",
-        strokeWeight: 2,
-      },
-    });
+    // Create a directional cone/arrow icon if heading is available
+    const icon =
+      currentHeading !== null
+        ? {
+            // Custom SVG path for a cone/arrow pointing up (north)
+            path: "M 0,-24 L 12,12 L 0,6 L -12,12 Z",
+            fillColor: "#4285F4",
+            fillOpacity: 0.9,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+            scale: 1,
+            rotation: currentRotation, // Use current animated rotation
+            anchor: new google.maps.Point(0, 0),
+          }
+        : {
+            // Fallback to circle if no heading
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: "#4285F4",
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+          };
+
+    if (currentLocationMarker) {
+      // Update existing marker position
+      currentLocationMarker.setPosition(location);
+
+      // If heading changed, start smooth rotation animation
+      if (currentHeading !== null && currentHeading !== targetRotation) {
+        targetRotation = currentHeading;
+        // Start animation if not already running
+        if (rotationAnimationInterval === null) {
+          rotationAnimationInterval = window.setInterval(animateRotation, ANIMATION_INTERVAL);
+        }
+      } else if (currentHeading === null) {
+        // If no heading, switch to circle icon
+        currentLocationMarker.setIcon(icon);
+      }
+    } else {
+      // Create marker only if it doesn't exist
+      if (currentHeading !== null) {
+        currentRotation = currentHeading;
+        targetRotation = currentHeading;
+      }
+      currentLocationMarker = new google.maps.Marker({
+        position: location,
+        map: mapInstance,
+        icon: icon,
+      });
+    }
   });
 
   const updatePointPosition = (
@@ -422,7 +583,9 @@ const App: Component = () => {
               <button
                 onClick={handleRemoveLastPoint}
                 class="undo-btn"
-                disabled={!selectedPath() || selectedPath()!.points.length === 0}
+                disabled={
+                  !selectedPath() || selectedPath()!.points.length === 0
+                }
                 title="Remove last point"
               >
                 ← Remove Last

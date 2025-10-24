@@ -8,6 +8,10 @@ interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
 
+interface DeviceOrientationEvent {
+  webkitCompassHeading?: number;
+}
+
 declare namespace google.maps {
   class Map {
     constructor(mapDiv: HTMLElement, opts?: MapOptions);
@@ -80,6 +84,12 @@ declare namespace google.maps {
     fillOpacity?: number;
     strokeColor?: string;
     strokeWeight?: number;
+    rotation?: number;
+    anchor?: Point;
+  }
+
+  class Point {
+    constructor(x: number, y: number);
   }
 
   enum SymbolPath {
