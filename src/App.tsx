@@ -259,8 +259,9 @@ const App: Component = () => {
           span.innerText = "";
         }
         if (
+          span.innerText.trim() === "For development purposes only" ||
           span.innerText.trim() ===
-          "This page can't load Google Maps correctly."
+            "This page can't load Google Maps correctly."
         ) {
           const grandparent = span.parentElement?.parentElement;
           if (grandparent) {
