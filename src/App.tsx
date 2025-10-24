@@ -283,23 +283,35 @@ const App: Component = () => {
           }
         }
       }
+
+      // Check for div with semi-transparent black background
+      if (element.nodeName === "DIV") {
+        const div = element as HTMLDivElement;
+        const bgColor = div.style.backgroundColor;
+        if (bgColor === "rgba(0, 0, 0, 0.5)" || bgColor === "rgba(0,0,0,0.5)") {
+          div.style.backgroundColor = "";
+        }
+      }
     };
 
     // Create a MutationObserver to watch for new elements
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => {
-          // Check if the added node is a span or img element
-          if (node.nodeName === "SPAN" || node.nodeName === "IMG") {
+          // Check if the added node is a span, img, or div element
+          if (node.nodeName === "SPAN" || node.nodeName === "IMG" || node.nodeName === "DIV") {
             removeWarnings(node as HTMLElement);
           }
-          // Check for span and img elements within added nodes
+          // Check for span, img, and div elements within added nodes
           if (node instanceof Element) {
             node.querySelectorAll("span").forEach((span) => {
               removeWarnings(span as HTMLElement);
             });
             node.querySelectorAll("img").forEach((img) => {
               removeWarnings(img as HTMLElement);
+            });
+            node.querySelectorAll("div").forEach((div) => {
+              removeWarnings(div as HTMLElement);
             });
           }
         });
@@ -318,6 +330,9 @@ const App: Component = () => {
     });
     document.querySelectorAll("img").forEach((img) => {
       removeWarnings(img as HTMLElement);
+    });
+    document.querySelectorAll("div").forEach((div) => {
+      removeWarnings(div as HTMLElement);
     });
 
     // Add keyboard shortcut to toggle edit mode (Ctrl+E)
