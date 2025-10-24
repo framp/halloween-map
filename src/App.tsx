@@ -251,33 +251,54 @@ const App: Component = () => {
     setApiKey(key);
 
     // Remove Google Maps development warnings using MutationObserver
-    const removeWarnings = (span: HTMLSpanElement) => {
-      if (span.innerText.trim() === "For development purposes only") {
-        span.innerText = "";
+    const removeWarnings = (element: HTMLElement) => {
+      // Check for span elements
+      if (element.nodeName === "SPAN") {
+        const span = element as HTMLSpanElement;
+        if (span.innerText.trim() === "For development purposes only") {
+          span.innerText = "";
+        }
+        if (
+          span.innerText.trim() ===
+          "This page can't load Google Maps correctly."
+        ) {
+          const grandparent = span.parentElement?.parentElement;
+          if (grandparent) {
+            grandparent.remove();
+          }
+        }
       }
-      if (
-        span.innerText.trim() ===
-        "This page can't load Google Maps correctly."
-      ) {
-        const grandparent = span.parentElement?.parentElement;
-        if (grandparent) {
-          grandparent.remove();
+
+      // Check for Google gray logo image
+      if (element.nodeName === "IMG") {
+        const img = element as HTMLImageElement;
+        if (
+          img.src ===
+          "https://maps.gstatic.com/mapfiles/api-3/images/google_gray.svg"
+        ) {
+          const grandparent = img.parentElement?.parentElement;
+          if (grandparent) {
+            grandparent.remove();
+          }
         }
       }
     };
 
-    // Create a MutationObserver to watch for new span elements
+    // Create a MutationObserver to watch for new elements
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => {
-          // Check if the added node is a span element
-          if (node.nodeName === "SPAN") {
-            removeWarnings(node as HTMLSpanElement);
+          // Check if the added node is a span or img element
+          if (node.nodeName === "SPAN" || node.nodeName === "IMG") {
+            removeWarnings(node as HTMLElement);
           }
-          // Check for span elements within added nodes
+          // Check for span and img elements within added nodes
           if (node instanceof Element) {
             node.querySelectorAll("span").forEach((span) => {
-              removeWarnings(span as HTMLSpanElement);
+              removeWarnings(span as HTMLElement);
+            });
+            node.querySelectorAll("img").forEach((img) => {
+              removeWarnings(img as HTMLElement);
             });
           }
         });
@@ -292,7 +313,10 @@ const App: Component = () => {
 
     // Also clean up any existing warnings on mount
     document.querySelectorAll("span").forEach((span) => {
-      removeWarnings(span as HTMLSpanElement);
+      removeWarnings(span as HTMLElement);
+    });
+    document.querySelectorAll("img").forEach((img) => {
+      removeWarnings(img as HTMLElement);
     });
 
     // Add keyboard shortcut to toggle edit mode (Ctrl+E)
@@ -465,7 +489,10 @@ const App: Component = () => {
         targetRotation = currentHeading;
         // Start animation if not already running
         if (rotationAnimationInterval === null) {
-          rotationAnimationInterval = window.setInterval(animateRotation, ANIMATION_INTERVAL);
+          rotationAnimationInterval = window.setInterval(
+            animateRotation,
+            ANIMATION_INTERVAL,
+          );
         }
       } else if (currentHeading === null) {
         // If no heading, switch to circle icon
