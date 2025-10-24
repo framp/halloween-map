@@ -250,23 +250,50 @@ const App: Component = () => {
     const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
     setApiKey(key);
 
-    // Remove Google Maps development warnings
-    const warningInterval = setInterval(() => {
-      document.querySelectorAll("span").forEach((span) => {
-        if (span.innerText.trim() === "For development purposes only") {
-          span.innerText = "";
+    // Remove Google Maps development warnings using MutationObserver
+    const removeWarnings = (span: HTMLSpanElement) => {
+      if (span.innerText.trim() === "For development purposes only") {
+        span.innerText = "";
+      }
+      if (
+        span.innerText.trim() ===
+        "This page can't load Google Maps correctly."
+      ) {
+        const grandparent = span.parentElement?.parentElement;
+        if (grandparent) {
+          grandparent.remove();
         }
-        if (
-          span.innerText.trim() ===
-          "This page can't load Google Maps correctly."
-        ) {
-          const grandparent = span.parentElement?.parentElement;
-          if (grandparent) {
-            grandparent.remove();
+      }
+    };
+
+    // Create a MutationObserver to watch for new span elements
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          // Check if the added node is a span element
+          if (node.nodeName === "SPAN") {
+            removeWarnings(node as HTMLSpanElement);
           }
-        }
+          // Check for span elements within added nodes
+          if (node instanceof Element) {
+            node.querySelectorAll("span").forEach((span) => {
+              removeWarnings(span as HTMLSpanElement);
+            });
+          }
+        });
       });
-    }, 500);
+    });
+
+    // Start observing the document body for added nodes
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+
+    // Also clean up any existing warnings on mount
+    document.querySelectorAll("span").forEach((span) => {
+      removeWarnings(span as HTMLSpanElement);
+    });
 
     // Add keyboard shortcut to toggle edit mode (Ctrl+E)
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -281,7 +308,7 @@ const App: Component = () => {
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
-      clearInterval(warningInterval);
+      observer.disconnect();
       if (rotationAnimationInterval !== null) {
         clearInterval(rotationAnimationInterval);
       }
