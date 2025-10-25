@@ -1154,9 +1154,8 @@ const DEFAULT_PATHS: Path[] = [
   },
 ];
 
-// Generate a color based on index using HSL
 const getPathColor = (index: number): string => {
-  const hue = (index * 137.5) % 360; // Golden angle for good distribution
+  const hue = (index * 137.5) % 360;
   return `hsl(${hue}, 85%, 55%)`;
 };
 
@@ -1183,37 +1182,35 @@ const App: Component = () => {
   let markers: Map<string, google.maps.Marker[]> = new Map();
   let currentLocationMarker: google.maps.Marker | undefined;
   let isDragging = false;
-  let currentRotation = 0; // Current displayed rotation
-  let targetRotation = 0; // Target rotation from sensor
+  let currentRotation = 0;
+  let targetRotation = 0;
   let rotationAnimationInterval: number | null = null;
-  const ANIMATION_FPS = 10; // Max 10 updates per second
-  const ANIMATION_INTERVAL = 1000 / ANIMATION_FPS; // 100ms
-  let lastPanTime = 0; // Track last time map was panned
-  const PAN_THROTTLE = 1000; // Only pan once per second
+  const ANIMATION_FPS = 10;
+  const ANIMATION_INTERVAL = 1000 / ANIMATION_FPS;
+  let lastPanTime = 0;
+  const PAN_THROTTLE = 1000;
+  let locationWatchId: number | null = null;
+  let lastLocationUpdateTime = 0;
+  const LOCATION_UPDATE_THROTTLE = 1000;
 
-  // Calculate shortest rotation angle (handles 0-360 wrap-around)
   const getShortestAngle = (from: number, to: number): number => {
     let diff = to - from;
-    // Normalize to [-180, 180]
+
     while (diff > 180) diff -= 360;
     while (diff < -180) diff += 360;
     return diff;
   };
 
-  // Smooth rotation animation
   const animateRotation = () => {
     if (!currentLocationMarker) return;
 
     const diff = getShortestAngle(currentRotation, targetRotation);
-    const easingFactor = 0.15; // Adjust for faster/slower easing (0.1 = slower, 0.3 = faster)
+    const easingFactor = 0.15;
 
-    // Move current rotation towards target
     currentRotation += diff * easingFactor;
 
-    // Normalize to [0, 360)
     currentRotation = ((currentRotation % 360) + 360) % 360;
 
-    // Update marker icon with new rotation
     const location = currentLocation();
     if (location) {
       const icon = {
@@ -1229,7 +1226,6 @@ const App: Component = () => {
       currentLocationMarker.setIcon(icon);
     }
 
-    // Stop animation if we've reached the target (within threshold)
     if (Math.abs(diff) < 0.1) {
       if (rotationAnimationInterval !== null) {
         clearInterval(rotationAnimationInterval);
@@ -1238,17 +1234,13 @@ const App: Component = () => {
     }
   };
 
-  // Load paths from localStorage on mount
   onMount(() => {
-    // Load edit mode setting
     const editMode = localStorage.getItem(EDIT_MODE_KEY);
     setEditModeEnabled(editMode === "true");
 
-    // Check for hash in URL (e.g., #1, #2)
     const hash = window.location.hash.replace("#", "");
     const pathIndex = hash ? parseInt(hash, 10) - 1 : 0;
 
-    // If we're in edit mode, show all paths
     if (editMode === "true") {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -1260,31 +1252,26 @@ const App: Component = () => {
           }
         } catch (e) {
           console.error("Failed to parse saved paths", e);
-          // If parsing fails, use default paths
+
           setPaths(DEFAULT_PATHS);
           setSelectedPathId(DEFAULT_PATHS[0].id);
         }
       } else {
-        // No saved data, use default paths
         setPaths(DEFAULT_PATHS);
         setSelectedPathId(DEFAULT_PATHS[0].id);
       }
     } else {
-      // Not in edit mode - load path based on hash
       if (pathIndex >= 0 && pathIndex < DEFAULT_PATHS.length) {
-        // Load specific path from hash
         const pathToLoad = DEFAULT_PATHS[pathIndex];
         setPaths([pathToLoad]);
         setSelectedPathId(pathToLoad.id);
       } else {
-        // Invalid hash, load first default path
         const pathToLoad = DEFAULT_PATHS[0];
         setPaths([pathToLoad]);
         setSelectedPathId(pathToLoad.id);
       }
     }
 
-    // Listen for hash changes to reload paths
     const handleHashChange = () => {
       const newHash = window.location.hash.replace("#", "");
       const newPathIndex = newHash ? parseInt(newHash, 10) : 0;
@@ -1302,7 +1289,6 @@ const App: Component = () => {
     window.addEventListener("hashchange", handleHashChange);
     handleHashChange();
 
-    // Get current location
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -1310,14 +1296,34 @@ const App: Component = () => {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
           });
+          lastLocationUpdateTime = Date.now();
         },
         (error) => {
           console.error("Error getting location:", error);
         },
       );
+
+      locationWatchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const now = Date.now();
+          if (now - lastLocationUpdateTime >= LOCATION_UPDATE_THROTTLE) {
+            setCurrentLocation({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+            });
+            lastLocationUpdateTime = now;
+          }
+        },
+        (error) => {
+          console.error("Error watching location:", error);
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 0,
+        },
+      );
     }
 
-    // Request device orientation permission (required on iOS 13+)
     const requestOrientationPermission = async () => {
       if (
         typeof (DeviceOrientationEvent as any).requestPermission === "function"
@@ -1333,20 +1339,14 @@ const App: Component = () => {
           console.error("Error requesting orientation permission:", error);
         }
       } else {
-        // Non-iOS devices or older iOS versions
         setupOrientationListener();
       }
     };
 
     const setupOrientationListener = () => {
       const handleOrientation = (event: DeviceOrientationEvent) => {
-        // Use absolute heading if available (compass), otherwise use alpha
         const compassHeading = event.webkitCompassHeading || event.alpha;
         if (compassHeading !== null) {
-          // webkitCompassHeading gives degrees from north (0-360)
-          // alpha gives rotation around z-axis (0-360)
-          // For webkitCompassHeading: 0 = North, 90 = East, 180 = South, 270 = West
-          // For alpha: we need to invert it (360 - alpha) to match compass direction
           const heading =
             event.webkitCompassHeading !== undefined
               ? event.webkitCompassHeading
@@ -1363,16 +1363,12 @@ const App: Component = () => {
       window.addEventListener("deviceorientation", handleOrientation);
     };
 
-    // Start orientation tracking
     requestOrientationPermission();
 
-    // Load API key from environment
     const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
     setApiKey(key);
 
-    // Remove Google Maps development warnings using MutationObserver
     const removeWarnings = (element: HTMLElement) => {
-      // Check for span elements
       if (element.nodeName === "SPAN") {
         const span = element as HTMLSpanElement;
         if (span.innerText.trim() === "For development purposes only") {
@@ -1390,7 +1386,6 @@ const App: Component = () => {
         }
       }
 
-      // Check for Google gray logo image
       if (element.nodeName === "IMG") {
         const img = element as HTMLImageElement;
         if (
@@ -1404,7 +1399,6 @@ const App: Component = () => {
         }
       }
 
-      // Check for div with semi-transparent black background
       if (element.nodeName === "DIV") {
         const div = element as HTMLDivElement;
         const bgColor = div.style.backgroundColor;
@@ -1414,11 +1408,9 @@ const App: Component = () => {
       }
     };
 
-    // Create a MutationObserver to watch for new elements
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => {
-          // Check if the added node is a span, img, or div element
           if (
             node.nodeName === "SPAN" ||
             node.nodeName === "IMG" ||
@@ -1426,7 +1418,7 @@ const App: Component = () => {
           ) {
             removeWarnings(node as HTMLElement);
           }
-          // Check for span, img, and div elements within added nodes
+
           if (node instanceof Element) {
             node.querySelectorAll("span").forEach((span) => {
               removeWarnings(span as HTMLElement);
@@ -1442,13 +1434,11 @@ const App: Component = () => {
       });
     });
 
-    // Start observing the document body for added nodes
     observer.observe(document.body, {
       childList: true,
       subtree: true,
     });
 
-    // Also clean up any existing warnings on mount
     document.querySelectorAll("span").forEach((span) => {
       removeWarnings(span as HTMLElement);
     });
@@ -1459,7 +1449,6 @@ const App: Component = () => {
       removeWarnings(div as HTMLElement);
     });
 
-    // Add keyboard shortcut to toggle edit mode (Ctrl+E)
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === "e") {
         e.preventDefault();
@@ -1477,41 +1466,38 @@ const App: Component = () => {
       if (rotationAnimationInterval !== null) {
         clearInterval(rotationAnimationInterval);
       }
+      if (locationWatchId !== null) {
+        navigator.geolocation.clearWatch(locationWatchId);
+      }
     };
   });
 
-  // Save paths to localStorage whenever they change
   createEffect(() => {
     const currentPaths = paths();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(currentPaths));
   });
 
-  // Get the currently selected path
   const selectedPath = () => {
     const id = selectedPathId();
     if (!id) return null;
     return paths().find((p) => p.id === id) || null;
   };
 
-  // Update all polylines and markers when paths change
   createEffect(() => {
     const mapInstance = map();
     if (!mapInstance) return;
 
     const currentPaths = paths();
 
-    // Clear existing polylines and markers
     polylines.forEach((polyline) => polyline.setMap(null));
     polylines.clear();
     markers.forEach((markerList) => markerList.forEach((m) => m.setMap(null)));
     markers.clear();
 
-    // Render all paths
     currentPaths.forEach((path, pathIndex) => {
       const color = getPathColor(pathIndex);
       const isSelected = path.id === selectedPathId();
 
-      // Create polyline
       if (path.points.length > 0) {
         const polyline = new google.maps.Polyline({
           path: path.points,
@@ -1523,7 +1509,6 @@ const App: Component = () => {
         polylines.set(path.id, polyline);
       }
 
-      // Create markers
       const pathMarkers: google.maps.Marker[] = [];
       path.points.forEach((point, pointIndex) => {
         const isMarkerSelected =
@@ -1544,7 +1529,6 @@ const App: Component = () => {
           },
         });
 
-        // Add click listener to select marker
         if (isEditing() && isSelected) {
           marker.addListener("click", () => {
             if (!isDragging) {
@@ -1574,7 +1558,7 @@ const App: Component = () => {
               });
             }
             setDraggedPosition(null);
-            // Reset isDragging after a small delay to prevent click event
+
             setTimeout(() => {
               isDragging = false;
             }, 100);
@@ -1587,7 +1571,6 @@ const App: Component = () => {
     });
   });
 
-  // Center map on current location when tracking is enabled (throttled to 1 per second)
   createEffect(() => {
     const mapInstance = map();
     const location = currentLocation();
@@ -1601,7 +1584,6 @@ const App: Component = () => {
     }
   });
 
-  // Update current location marker
   createEffect(() => {
     const mapInstance = map();
     if (!mapInstance) return;
@@ -1611,22 +1593,19 @@ const App: Component = () => {
 
     const currentHeading = heading();
 
-    // Create a directional cone/arrow icon if heading is available
     const icon =
       currentHeading !== null
         ? {
-            // Custom SVG path for a cone/arrow pointing up (north)
             path: "M 0,-24 L 12,12 L 0,6 L -12,12 Z",
             fillColor: "#4285F4",
             fillOpacity: 0.9,
             strokeColor: "#ffffff",
             strokeWeight: 2,
             scale: 1,
-            rotation: currentRotation, // Use current animated rotation
+            rotation: currentRotation,
             anchor: new google.maps.Point(0, 0),
           }
         : {
-            // Fallback to circle if no heading
             path: google.maps.SymbolPath.CIRCLE,
             scale: 8,
             fillColor: "#4285F4",
@@ -1636,13 +1615,11 @@ const App: Component = () => {
           };
 
     if (currentLocationMarker) {
-      // Update existing marker position
       currentLocationMarker.setPosition(location);
 
-      // If heading changed, start smooth rotation animation
       if (currentHeading !== null && currentHeading !== targetRotation) {
         targetRotation = currentHeading;
-        // Start animation if not already running
+
         if (rotationAnimationInterval === null) {
           rotationAnimationInterval = window.setInterval(
             animateRotation,
@@ -1650,11 +1627,9 @@ const App: Component = () => {
           );
         }
       } else if (currentHeading === null) {
-        // If no heading, switch to circle icon
         currentLocationMarker.setIcon(icon);
       }
     } else {
-      // Create marker only if it doesn't exist
       if (currentHeading !== null) {
         currentRotation = currentHeading;
         targetRotation = currentHeading;
@@ -1693,7 +1668,6 @@ const App: Component = () => {
       lng: e.latLng.lng(),
     };
 
-    // Add point to selected path
     setPaths((prev) =>
       prev.map((p) => {
         if (p.id === currentPath.id) {
@@ -1739,7 +1713,7 @@ const App: Component = () => {
       prev.map((p) => {
         if (p.id === currentPath.id) {
           const newPoints = [...p.points];
-          newPoints.pop(); // Remove last point
+          newPoints.pop();
           return { ...p, points: newPoints };
         }
         return p;
@@ -1751,7 +1725,6 @@ const App: Component = () => {
   const handleMapReady = (mapInstance: google.maps.Map) => {
     setMap(mapInstance);
 
-    // Re-trigger path rendering if we have saved paths
     const currentPaths = paths();
     if (currentPaths.length > 0) {
       setPaths([...currentPaths]);
@@ -1766,14 +1739,12 @@ const App: Component = () => {
     if (!mapInstance) return;
 
     if (newTrackingState) {
-      // Track position: center on current location if available
       const location = currentLocation();
       if (location) {
         mapInstance.panTo(location);
-        lastPanTime = Date.now(); // Reset throttle timer
+        lastPanTime = Date.now();
       }
     } else {
-      // Navigate freely: center on default center
       mapInstance.panTo(DEFAULT_CENTER);
     }
   };
